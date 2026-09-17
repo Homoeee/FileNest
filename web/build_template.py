@@ -1,0 +1,16 @@
+from pathlib import Path
+p = Path('test/ui-preview.html').read_text(encoding='utf-8')
+p = p[:p.index('<script>')] + '<script src="/app.js" defer></script></body></html>'
+p = p.replace('<head>', '<head><meta name="filenest-token" content="__TOKEN__">')
+p = p.replace('FileNest · 界面概念版', 'FileNest · 本地网页版').replace('交互原型 · 示例数据', '本地运行 · 文件不上传')
+p = p.replace('恢复示例', '保存配置').replace('value="D:\\Downloads"', 'placeholder="填写完整目录路径；多个目录用分号分隔"').replace('value="D:\\FileNest\\已整理"', 'placeholder="填写整理后的目标目录"')
+p = p.replace('<select id="ruleSelect"><option>默认分类规则</option><option>仅整理文档</option><option>图片按月份归档</option></select>', '<select id="ruleSelect"><option>按规则管理中的顺序执行</option></select>')
+p = p.replace('仅演示交互，不会操作真实文件', '先核对预览，再执行文件操作').replace('预览已就绪。点击文件详情，查看匹配原因。', '选择来源与目标目录，生成整理预览。')
+p = p.replace('3 条示例规则', '<span id="ruleCount">分类规则</span>').replace('<div class="rule-grid" id="ruleCards">', '<button id="addRule" style="margin-bottom:18px">＋ 新建规则</button><div class="rule-grid" id="ruleCards">')
+p = p.replace('查看本次演示中的操作结果，体验整理后的恢复流程。', '查看逐文件结果，安全恢复未被修改的移动与重命名。').replace('本次会话', '本地历史').replace('完成一次模拟整理后', '完成一次整理后')
+p = p.replace('value="rename"', 'value="number"').replace('关于此原型', '排除目录').replace('所有文件和操作均为模拟，设置仅在当前页面会话生效。', '每行一个完整路径；目标目录与内部数据目录自动排除。').replace('<span class="badge">v0.1 概念版</span>', '<textarea id="excludes" rows="4" aria-label="排除目录"></textarea>')
+p = p.replace('</div></div></section>\n</div></main>', '</div><button id="saveSettings" style="margin-top:20px">保存偏好</button></div></section>\n</div></main>')
+p = p.replace('<button id="undoLatest"', '<button id="cancel" hidden>停止剩余任务</button><button id="undoLatest"')
+p = p.replace('同名冲突</span><em>', '需要关注</span><em>')
+p = p.replace('</style>', 'textarea{font:inherit;border:1px solid var(--line);border-radius:8px;padding:10px;max-width:100%;color:var(--ink)}.editor{display:grid;grid-template-columns:1fr 1fr;gap:14px}.editor label{font-size:12px;color:var(--muted)}.editor input:not([type=checkbox]),.editor select{display:block;width:100%;padding:8px;border:1px solid var(--line);border-radius:7px}dialog{max-width:760px;max-height:85vh;overflow:auto}.rule-foot{gap:8px;flex-wrap:wrap}.detail-line{overflow-wrap:anywhere;white-space:pre-wrap}#status{white-space:pre-wrap}.note{padding-bottom:12px}.strategy-grid{grid-template-columns:repeat(4,minmax(0,1fr))}@media(max-width:1000px){.strategy-grid{grid-template-columns:1fr 1fr}}@media(max-width:650px){.editor{grid-template-columns:1fr}.setting{flex-wrap:wrap}} </style>')
+Path('web/index.html').write_text(p, encoding='utf-8')
