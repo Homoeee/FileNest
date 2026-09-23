@@ -1,0 +1,113 @@
+/* 桌面版与网页版共用蓝橙主题；保留轻量背景，不叠加额外脚本或大图。 */
+:root{--ink:#172b46;--muted:#65758b;--blue:#2563eb;--line:#dce4ee;--bg:#e4f0fa}
+html{background:#dceafb}
+body{padding:20px;background:radial-gradient(ellipse at 0 0,#ffc49d 0,transparent 43%),radial-gradient(ellipse at 100% 0,#88b5ed 0,transparent 52%),linear-gradient(125deg,#f1d2b9,#c5e3f4 63%,#9cbbe8);background-attachment:fixed;color:var(--ink);font-size:14px}
+.app{max-width:1660px;min-height:calc(100vh - 40px);margin:0 auto;border:1px solid #ffffffaf;border-radius:20px;box-shadow:0 18px 60px #31577926;overflow:visible;background:#f7fbff}
+.sidebar{position:sticky;top:0;inset:auto;flex:0 0 214px;width:214px;height:calc(100vh - 40px);padding:27px 16px;background:linear-gradient(155deg,#f7fbfff2 0%,#e8f3f9f0 55%,#fff0e2ee 100%);border-right:1px solid #ffffffb8;border-radius:20px 0 0 20px;overflow-y:auto}
+.brand{font-size:23px;letter-spacing:-.7px;padding-inline:8px}
+.logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#ff9c49 0%,#42a9e6 70%,#2673d6 100%);box-shadow:0 4px 12px #4789bc36;font-size:22px}
+.brand-sub{padding:5px 9px 30px;color:var(--muted)}
+.nav{gap:4px}
+.nav button{gap:10px;padding:11px 12px;border-radius:9px;color:#50637d;font-size:14px}
+.nav button:hover,.place-item>button:first-child:hover{background:#f0f5ff}
+.nav button.active{background:linear-gradient(105deg,#ffb15e 0%,#ffe0aa 24%,#b6ddf4 68%,#70b8ed 100%);color:#17446e;box-shadow:0 4px 12px #527da329}
+.nav i{font-size:17px}
+.sidebar-foot .card{background:#f5f8fd!important;border-color:var(--line)!important}
+.local{border-color:var(--line)}
+.main{flex:1;min-width:0;width:auto;margin:0;position:relative;background:radial-gradient(ellipse at 0 85%,#ffb66f8c,transparent 55%),radial-gradient(ellipse at 100% 5%,#66bee0a8,transparent 60%),linear-gradient(135deg,#d7edfb,#d8ecf4 58%,#abd5ed);border-radius:0 20px 20px 0}
+/* 三角网格沿用页面原有的 SVG 路径，纯 CSS 绘制且不阻挡交互。 */
+.main:before{display:block;opacity:.2}
+.topbar{position:relative;height:64px;padding-inline:32px;background:#f8fcffdc;border-bottom:1px solid #ffffffae;font-size:13px;color:var(--muted);border-radius:0 20px 0 0}
+.topbar strong{font-weight:600;color:var(--ink)}
+.content{position:relative;max-width:1510px;margin:auto;padding:30px 32px 44px}
+.heading,.explorer-heading{margin-bottom:22px}
+h1,.explorer-heading h1{font-size:27px;letter-spacing:-.5px;line-height:1.25}
+p,.heading p,.explorer-heading p{font-size:13px;color:var(--muted)}
+h2,.cardtitle h2,.strategy-heading h2{font-size:16px}
+.card,.file-pane{background:#fffffff2;border:1px solid #ffffffd8;border-radius:13px;box-shadow:0 5px 17px #31577916}
+.file-pane.active-pane,.file-pane:focus-within{border-color:#7ba8f9;box-shadow:0 0 0 2px #e5efff}
+.explorer-actions{position:static;background:#fffffff0;border:1px solid #ffffffd8;box-shadow:0 5px 17px #31577916;backdrop-filter:none}
+.explorer-actions>span,.explorer-footer,#explorerStatus{color:var(--muted);font-size:12px}
+.dual-panes{gap:16px;grid-template-columns:repeat(2,minmax(0,1fr))}
+.pane-title{padding:14px 15px 7px;font-size:14px;font-weight:600}
+.pane-title>span{font-size:12px;font-weight:400}
+.pane-address,.pane-tools{padding-inline:14px}
+.pane-address input,.pane-tools input,.pane-tools select{border-color:var(--line);background:#fff;color:var(--ink);font-size:13px}
+.pane-list{height:min(57vh,640px);min-height:330px}
+.pane-list table{min-width:380px}
+.pane-list td{font-size:13px;padding-block:10px}
+.pane-list th,.pane-list th button{font-size:12px}
+.pane-list tr.selected{background:#eaf2ff}
+.pane-list tr.selected:hover{background:#e1ecff}
+.entry-icon{background:#edf3ff;color:#4d75b5}
+.entry-icon.folder{background:#fff4dc;color:#ad7920}
+.badge{background:#eef4ff;border-color:#dbe8ff;color:#3462a4;font-size:12px}
+.mode-controls button{border:1px solid #cadcfb;background:#f5f8ff;color:#1c55ba;font-size:12px}
+.mode-controls button:hover{background:#eaf1ff}
+.mode-controls #quitApp{border-color:var(--line);background:#fff;color:#52647d}
+.primary,.primary:hover{background:linear-gradient(105deg,#f29238 0%,#f8b66d 24%,#4eade6 75%,#268ee0 100%);border:1px solid #e5a767;box-shadow:0 4px 11px #528eba31;color:#fff}
+.primary:hover{filter:brightness(.96)}
+button:hover{background:#f1f6ff}
+.strategy-panel{padding:22px 24px}
+.strategy-grid{gap:12px}
+.strategy{min-height:112px;border-radius:11px;box-shadow:none}
+.strategy:hover{transform:none;filter:brightness(1.04)}
+.strategy.blue,.strategy.blue:hover{background:linear-gradient(115deg,#3275e8,#34b8ed)}
+.strategy.orange,.strategy.orange:hover{background:linear-gradient(115deg,#f68b36,#f8b957)}
+.strategy.cyan,.strategy.cyan:hover{background:linear-gradient(115deg,#177eae,#30c0ca)}
+.strategy.date-card,.strategy.date-card:hover{background:linear-gradient(115deg,#6083c6,#92afd9)}
+.strategy[aria-pressed=false]{background:#f2f5f9;color:#718096;border:1px solid var(--line)}
+.stats{background:#fffffff0;border:1px solid #ffffffd8;box-shadow:0 5px 17px #31577916}
+.stat .label{font-size:12px}
+.table-wrap{max-height:52vh}
+.bottom{position:static;margin:20px 0 0;padding:0;background:none;border:0;backdrop-filter:none}
+.fields{gap:15px}
+.field label,.field input,.field select{font-size:13px}
+.rule-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.rule{min-width:0}
+.rule h2,.rule p,.rule .tag{overflow-wrap:anywhere}
+.settings{max-width:820px}
+.more-row td{text-align:center;padding:10px;background:#f8fbff}
+.more-row button{border-color:#cadcfb;color:#1c55ba;background:#fff;font-size:12px}
+.pane-address{flex-wrap:wrap}
+.pane-address input{flex-basis:180px}
+.pane-address [data-pick-pane]{white-space:nowrap;border-color:#d2e3f4;color:#265e99;background:#f4faff}
+.pane-address [data-pick-pane]:hover{background:#e8f3ff}
+@media(max-width:1180px){
+  .sidebar{flex-basis:188px;width:188px;padding-inline:12px}
+  .content{padding:25px 24px 36px}
+  .topbar{padding-inline:24px}
+  .dual-panes{grid-template-columns:1fr}
+  .pane-list{height:340px;min-height:260px}
+  .rule-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:700px){
+  body{padding:0;background-attachment:scroll}
+  .app{display:block}
+  .app{min-height:100vh;border:0;border-radius:0;box-shadow:none}
+  .sidebar{position:relative;top:auto;width:100%;height:auto;padding:13px 14px;border-right:0;border-bottom:1px solid #ffffffa8;border-radius:0}
+  .brand{font-size:20px}
+  .nav{display:flex;flex-direction:row;flex-wrap:wrap;gap:5px;margin-top:10px;overflow:visible}
+  .nav button{flex:1 1 30%;padding:8px 10px;font-size:12px;white-space:nowrap}
+  .main{width:100%;border-radius:0}
+  .topbar{height:auto;min-height:56px;padding:8px 14px;gap:9px;flex-wrap:wrap;border-radius:0}
+  .mode-controls{margin-left:auto}
+  .mode-controls .small,.mode-controls .badge{display:none}
+  .content{padding:20px 14px 30px}
+  h1,.explorer-heading h1{font-size:23px}
+  .explorer-heading{flex-wrap:wrap}
+  .explorer-heading>button{white-space:nowrap}
+  .explorer-actions{gap:7px}
+  .explorer-actions>span{width:100%}
+  .pane-list{height:310px;min-height:230px}
+  .strategy-grid,.rule-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat:nth-child(3){border-left:0}
+  .bottom{align-items:flex-start}
+}
+@media(max-width:440px){
+  .strategy-grid,.rule-grid{grid-template-columns:1fr}
+  .pane-list table{min-width:360px}
+  .pane-address button,.pane-tools button{padding-inline:7px}
+  .mode-controls button{font-size:11px}
+}

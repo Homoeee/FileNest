@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import queue
 import threading
 import tkinter as tk
@@ -47,6 +48,7 @@ class RuleDialog(tk.Toplevel):
         self.resizable(False, False)
         self.result = None
         current = rule or Rule(name="新规则")
+        self.original_rule = current
         self.values = {
             "name": tk.StringVar(value=current.name),
             "folder": tk.StringVar(value=current.folder),
@@ -121,7 +123,7 @@ class RuleDialog(tk.Toplevel):
             data = {name: value.get() for name, value in self.values.items()}
             data["min_size"] = parse_mb(data["min_size"])
             data["max_size"] = parse_mb(data["max_size"], optional=True)
-            self.result = Rule(**data)
+            self.result = Rule(**{**asdict(self.original_rule), **data})
             from filenest.rules import validate
             validate(self.result)
         except (ValueError, TypeError) as exc:

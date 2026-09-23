@@ -5,10 +5,13 @@ import threading
 from pathlib import Path
 
 from .paths import fingerprint, safe_path
+from .safety import check_operable, check_tree, snapshot
+from .file_operations import remove_verified, transfer
+from .recycle import recycle
 
 
 def move_no_replace(source, destination):
-    """Windows rename 原子拒绝覆盖；不隐式降级为跨盘复制再删除。"""
+    """Windows rename 原子拒绝覆盖；跨盘由经过校验的 transfer 处理。"""
     if os.name == "nt":
         os.rename(source, destination)
     else:
@@ -52,7 +55,9 @@ class Executor:
         self.store = store
         self._lock = threading.Lock()
 
-    def execute(self, items, cancel=None, progress=None):
+    def execute(self, items, cancel=None, progress=None, confirm_destructive=False):
+        if any(p.status == "ready" and p.action in {"delete", "recycle"} for p in items) and not confirm_destructive:
+            raise ValueError("删除或回收站操作需要明确确认")
         if not self._lock.acquire(blocking=False):
             raise RuntimeError("已有任务正在执行")
         try:
@@ -70,41 +75,44 @@ class Executor:
                 continue
             self.store.update(row_id, status="running")
             changed = False
+            def mark_changed():
+                nonlocal changed
+                changed = True
             try:
-                source, destination = safe_path(item.source), safe_path(item.destination)
-                if fingerprint(source, cancel) != item.snapshot:
-                    raise ValueError("文件自预览后发生变化，请重新扫描并预览")
-                if destination.exists():
-                    # 不能静默采用与用户预览不同的路径。
-                    self.store.update(row_id, status="skipped", reason="预览后目标出现同名文件，请刷新预览")
-                    continue
-                safe_path(destination.parent)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                safe_path(destination)
-                safe_path(source)
+                source = check_operable(item.source, (self.store.directory,))
+                before = snapshot(source, cancel)
+                if before != item.snapshot:
+                    raise ValueError('项目自预览后发生变化，请重新扫描并预览')
+                check_tree(source, before, (self.store.directory,))
                 if cancel.is_set():
-                    raise InterruptedError("任务已取消")
-                if item.action == "copy":
-                    after = copy_exclusive(source, destination, item.snapshot, cancel)
-                    changed = True
-                elif item.action in {"move", "rename"}:
-                    move_no_replace(source, destination)
-                    changed = True
-                    # 不能在移动完成后因用户取消而把已经完成的文件记为取消。
-                    after = fingerprint(destination)
-                    if after != item.snapshot:
-                        raise ValueError("移动后文件状态变化，请人工核对")
+                    raise InterruptedError('任务已取消')
+                if item.action == 'delete':
+                    remove_verified(source, before, cancel, mark_changed)
+                    after = {}
+                elif item.action == 'recycle':
+                    # Shell 失败可能已部分处理目录；保守记录为需核对。
+                    mark_changed()
+                    recycle(source)
+                    after = {}
                 else:
-                    raise ValueError("无效操作")
+                    destination = check_operable(item.destination, (self.store.directory,))
+                    if os.path.lexists(destination):
+                        self.store.update(row_id, status='skipped', reason='预览后目标出现同名项目，请刷新预览')
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    safe_path(destination)
+                    safe_path(source)
+                    if item.action not in {'copy', 'move', 'rename'}:
+                        raise ValueError('无效操作')
+                    after = transfer(source, destination, before, cancel, copy_exclusive,
+                                     move_no_replace, mark_changed, moving=item.action != 'copy')
             except InterruptedError as exc:
-                self.store.update(row_id, status="cancelled", reason=str(exc))
+                self.store.update(row_id, status='uncertain' if changed else 'cancelled', reason=str(exc))
             except (OSError, ValueError) as exc:
-                self.store.update(row_id, status="uncertain" if changed else "failed",
-                                  reason=f"{exc}。移动仅支持同一磁盘；跨盘请使用复制。" if
-                                  isinstance(exc, OSError) and getattr(exc, "winerror", None) == 17 else str(exc))
+                self.store.update(row_id, status='uncertain' if changed else 'failed', reason=str(exc))
             else:
-                # 记录失败必须上抛并停止，不能继续产生未记录的文件操作。
-                self.store.update(row_id, status="success", after_snapshot=json.dumps(after), reason="处理完成")
+                reason = {'delete': '已永久删除，无法撤销', 'recycle': '已移入 Windows 回收站，可从回收站还原'}.get(item.action, '处理完成')
+                self.store.update(row_id, status='success', after_snapshot=json.dumps(after), reason=reason)
             if progress:
                 progress(f"执行 {index} / {len(items)}")
         return batch
@@ -122,32 +130,34 @@ class Executor:
         for index, row in enumerate(rows, 1):
             if cancel.is_set():
                 break
-            if (row["status"] != "success" or row["action"] == "copy"
+            if (row["status"] != "success" or row["action"] not in {"move", "rename"}
                     or row["undo_status"] in {"success", "running", "uncertain"}):
                 continue
             self.store.update(row["id"], undo_status="running", undo_reason="")
             changed = False
+            def mark_changed():
+                nonlocal changed
+                changed = True
             try:
-                source = safe_path(row["destination"])
-                destination = safe_path(row["source"])
-                if fingerprint(source, cancel) != json.loads(row["after_snapshot"]):
-                    raise ValueError("整理后的文件已被修改或替换，不执行撤销")
+                source = check_operable(row['destination'], (self.store.directory,))
+                destination = check_operable(row['source'], (self.store.directory,))
+                expected = json.loads(row['after_snapshot'])
+                if snapshot(source, cancel) != expected:
+                    raise ValueError('整理后的项目已被修改或替换，不执行撤销')
+                check_tree(source, expected, (self.store.directory,))
                 if os.path.lexists(destination):
-                    raise FileExistsError("原位置已有文件，不覆盖；请解决冲突后重试")
+                    raise FileExistsError('原位置已有项目，不覆盖；请解决冲突后重试')
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 safe_path(source)
                 safe_path(destination)
                 if cancel.is_set():
-                    raise InterruptedError("撤销已取消")
-                move_no_replace(source, destination)
-                changed = True
-                if fingerprint(destination) != json.loads(row["after_snapshot"]):
-                    raise ValueError("恢复后文件状态变化，请人工核对")
+                    raise InterruptedError('撤销已取消')
+                transfer(source, destination, expected, cancel, copy_exclusive, move_no_replace, mark_changed)
             except InterruptedError as exc:
-                self.store.update(row["id"], undo_status="cancelled", undo_reason=str(exc))
+                self.store.update(row['id'], undo_status='uncertain' if changed else 'cancelled', undo_reason=str(exc))
             except (OSError, ValueError) as exc:
-                self.store.update(row["id"], undo_status="uncertain" if changed else "failed", undo_reason=str(exc))
+                self.store.update(row['id'], undo_status='uncertain' if changed else 'failed', undo_reason=str(exc))
             else:
-                self.store.update(row["id"], undo_status="success", undo_reason="已恢复原位置")
+                self.store.update(row['id'], undo_status='success', undo_reason='已恢复原位置')
             if progress:
                 progress(f"撤销 {index} / {len(rows)}")

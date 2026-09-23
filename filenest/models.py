@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+import uuid
 
 
 CATEGORIES = {
@@ -26,6 +27,7 @@ class FileInfo:
     device: int
     inode: int
     category: str
+    kind: str = "file"
 
 
 @dataclass
@@ -48,11 +50,14 @@ class Rule:
     add_date: bool = False
     sequence: bool = False
     enabled: bool = True
+    categories: list[str] = field(default_factory=list)
+    uid: str = field(default_factory=lambda: uuid.uuid4().hex)
 
 
 def default_rules() -> list[Rule]:
-    return [Rule(name=f"{name}分类", folder=name, extensions=extensions)
-            for name, extensions in CATEGORIES.items()]
+    return [Rule(name=f"{name}分类", folder=name, categories=[name],
+                 uid=uuid.uuid5(uuid.NAMESPACE_URL, "filenest:" + name).hex)
+            for name in [*CATEGORIES, "文件夹"]]
 
 
 @dataclass
@@ -64,6 +69,7 @@ class PlanItem:
     reason: str
     snapshot: dict = field(default_factory=dict)
     conflict: str = "skip"
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self):
         return asdict(self)

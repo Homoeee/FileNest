@@ -5,7 +5,7 @@ from .models import FileInfo, category
 from .paths import absolute, inside, key, metadata, safe_path
 
 
-def scan(roots, recursive=True, excluded=(), cancel=None, progress=None):
+def scan(roots, recursive=True, excluded=(), cancel=None, progress=None, include_temporary=False, include_directories=False):
     files, errors, seen = [], [], set()
     excludes = [absolute(p) for p in excluded]
 
@@ -26,11 +26,14 @@ def scan(roots, recursive=True, excluded=(), cancel=None, progress=None):
                     try:
                         safe_path(path)
                         if entry.is_dir(follow_symlinks=False):
+                            if include_directories and key(path) not in seen:
+                                seen.add(key(path))
+                                files.append(FileInfo(str(path), **metadata(path.stat()), category="文件夹", kind="directory"))
                             if recursive:
                                 walk(path)
                         elif entry.is_file(follow_symlinks=False) and key(path) not in seen:
                             seen.add(key(path))
-                            if path.suffix.lower() in {".crdownload", ".part", ".tmp", ".download"}:
+                            if not include_temporary and path.suffix.lower() in {".crdownload", ".part", ".tmp", ".download"}:
                                 continue
                             # Windows 上 DirEntry.stat 可能不给出可用的 st_dev/st_ino，
                             # 与执行前 Path.stat 的结果不一致，因此统一从路径读取。

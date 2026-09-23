@@ -75,7 +75,8 @@ class Store:
         with self.connect() as db:
             return [dict(r) for r in db.execute("""SELECT b.id, b.created, count(o.id) AS total,
                 sum(o.status='success') AS success, sum(o.status='failed') AS failed,
-                sum(o.undo_status='success') AS undone FROM batches b
+                sum(o.undo_status='success') AS undone,
+                sum(o.status='success' AND o.action IN ('move','rename') AND o.undo_status NOT IN ('success','running','uncertain')) AS undoable FROM batches b
                 LEFT JOIN operations o ON b.id=o.batch_id GROUP BY b.id ORDER BY b.created DESC, b.rowid DESC""")]
 
     def operations(self, batch):
@@ -87,7 +88,18 @@ class Store:
         if not path.exists():
             return {}, default_rules()
         data = json.loads(path.read_text(encoding="utf-8"))
-        rules = [Rule(**r) for r in data.pop("rules")]
+        rules = []
+        for index, raw in enumerate(data.pop("rules")):
+            # 旧配置没有稳定标识；读取时补充确定性标识，保存时才写回。
+            raw = dict(raw)
+            raw.setdefault("uid", uuid.uuid5(uuid.NAMESPACE_URL, f"filenest:legacy:{index}:{raw.get('name', '')}").hex)
+            if 'categories' not in raw:
+                from .models import CATEGORIES
+                matched = next((name for name, extensions in CATEGORIES.items()
+                                if raw.get('name') == name + '分类' and raw.get('extensions') == extensions), None)
+                if matched:
+                    raw['categories'] = [matched]
+            rules.append(Rule(**raw))
         for rule in rules:
             validate(rule)
         return data, rules

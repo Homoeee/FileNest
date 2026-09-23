@@ -2,5 +2,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .filenest/
+build/
+dist/
 test/_tmp/
 AGENTS.md
+test/
