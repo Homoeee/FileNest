@@ -11,8 +11,9 @@ from urllib.parse import urlsplit
 
 from filenest.executor import Executor
 from filenest.models import Rule, PlanItem, CATEGORIES
-from filenest.browser_service import DirectoryBrowser, available_roots
-from filenest.paths import inside, safe_path
+from filenest.browser_service import DirectoryBrowser, available_roots, common_folders
+from filenest.launcher import open_file
+from filenest.paths import inside, key, safe_path, validate_name
 from filenest.planner import build_plan
 from filenest.rules import validate
 from filenest.scanner import scan
@@ -70,15 +71,42 @@ class WebApp:
         with self.lock:
             self.job['message'] = message
 
+    def quick_access(self):
+        return {'common': common_folders(),
+                'pinned': [{'name': Path(path).name or path, 'path': path}
+                           for path in self.store.quick_access_paths()]}
+
     def request(self, path, data=None):
         if path == '/api/browse':
             settings, _ = self.store.load_settings()
             return self.browser.browse(data.get('path', ''), settings.get('excludes', []))
+        if path == '/api/open':
+            selected = self.browser.selected(data.get('token'), [data.get('index')])
+            open_file(selected[0], data.get('mode', 'default'))
+            return {'handed_to_system': True}
         with self.lock:
             if path == '/api/state':
                 settings, rules = self.store.load_settings()
                 return {'settings': settings, 'rules': [asdict(r) for r in rules], 'job': dict(self.job),
-                        'files': [asdict(f) for f in self.files], 'scan_id': self.scan_id, 'scan_settings': self.scan_settings, 'plan_id': self.plan_id, 'plan': [p.to_dict() for p in self.plan], 'history': self.store.batches()}
+                        'files': [asdict(f) for f in self.files], 'scan_id': self.scan_id, 'scan_settings': self.scan_settings, 'plan_id': self.plan_id, 'plan': [p.to_dict() for p in self.plan], 'history': self.store.batches(), 'quick_access': self.quick_access()}
+            if path == '/api/quick-access':
+                action = data.get('action')
+                if action == 'list':
+                    return self.quick_access()
+                if action not in {'add', 'remove'}:
+                    raise ValueError('无效的快速访问操作')
+                raw = data.get('path')
+                if not isinstance(raw, str) or not raw.strip() or not Path(raw).is_absolute():
+                    raise ValueError('请选择有效的绝对目录路径')
+                if action == 'add':
+                    directory = safe_path(raw)
+                    if not directory.is_dir() or inside(directory, self.store.directory):
+                        raise ValueError('目录不存在或属于程序内部数据，无法固定')
+                    if all(key(place['path']) != key(directory) for place in common_folders()):
+                        self.store.pin_quick_access(directory)
+                else:
+                    self.store.unpin_quick_access(raw)
+                return self.quick_access()
             if path == '/api/quit':
                 if self.job['busy']:
                     raise ValueError('任务仍在运行，请等待完成或先取消任务')
@@ -164,6 +192,17 @@ class WebApp:
                     allowed = {'prefix', 'suffix', 'replace_from', 'replace_to', 'add_date', 'sequence'}
                     if not isinstance(options, dict) or not options.keys() <= allowed:
                         raise ValueError('重命名选项无效')
+                    if action == 'rename' and 'new_name' in data:
+                        if len(chosen) != 1 or not isinstance(data['new_name'], str):
+                            raise ValueError('快捷重命名只支持一个项目')
+                        new_name = data['new_name']
+                        validate_name(new_name)
+                        source = Path(chosen[0].path)
+                        if chosen[0].kind == 'file' and Path(new_name).suffix.casefold() != source.suffix.casefold():
+                            raise ValueError('快捷重命名会保留文件扩展名，请只修改主名称')
+                        stem = new_name[:-len(source.suffix)] if chosen[0].kind == 'file' and source.suffix else new_name
+                        options = {'replace_from': source.stem if chosen[0].kind == 'file' else source.name,
+                                   'replace_to': stem}
                     quick_rules = [Rule(name='手动批量操作', action=action, categories=[*CATEGORIES, '其他', '文件夹'],
                                         conflict=data.get('conflict', 'skip'), **options)]
                 for rule in quick_rules:
@@ -295,6 +334,10 @@ def make_server(port=8765):
             path = urlsplit(self.path).path
             if path == '/api/state':
                 return self.respond(200, app.request(path))
+            images = {'/resource/filenest-logo.png': 'filenest-logo.png',
+                      '/resource/filenest-icon.png': 'filenest-icon.png'}
+            if path in images:
+                return self.respond(200, (RESOURCE_ROOT / 'resource' / images[path]).read_bytes(), 'image/png')
             names = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'), '/explorer.js': ('explorer.js', 'text/javascript'), '/explorer.css': ('explorer.css', 'text/css'), '/theme.css': ('theme.css', 'text/css')}
             if path not in names:
                 return self.respond(404, {'error': '页面不存在'})

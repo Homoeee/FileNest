@@ -28,6 +28,9 @@ class Store:
                     reason TEXT NOT NULL, snapshot TEXT NOT NULL,
                     after_snapshot TEXT, undo_status TEXT NOT NULL DEFAULT '',
                     undo_reason TEXT NOT NULL DEFAULT '');
+                CREATE TABLE IF NOT EXISTS quick_access (
+                    path TEXT PRIMARY KEY, path_key TEXT NOT NULL UNIQUE,
+                    position INTEGER NOT NULL);
             """)
 
     @contextmanager
@@ -82,6 +85,23 @@ class Store:
     def operations(self, batch):
         with self.connect() as db:
             return [dict(r) for r in db.execute("SELECT * FROM operations WHERE batch_id=? ORDER BY id", (batch,))]
+
+    def quick_access_paths(self):
+        with self.connect() as db:
+            return [row['path'] for row in db.execute(
+                "SELECT path FROM quick_access ORDER BY position, rowid")]
+
+    def pin_quick_access(self, path):
+        from .paths import key
+        with self.connect() as db:
+            position = db.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM quick_access").fetchone()[0]
+            db.execute("INSERT OR IGNORE INTO quick_access (path, path_key, position) VALUES (?, ?, ?)",
+                       (str(path), key(path), position))
+
+    def unpin_quick_access(self, path):
+        from .paths import key
+        with self.connect() as db:
+            db.execute("DELETE FROM quick_access WHERE path_key=?", (key(path),))
 
     def load_settings(self):
         path = self.directory / "settings.json"

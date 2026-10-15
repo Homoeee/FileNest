@@ -2,6 +2,7 @@
 
 import importlib.metadata
 import shutil
+import struct
 import subprocess
 import sys
 from datetime import datetime
@@ -9,20 +10,25 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_PYTHON = Path(r'D:\anaconda\Anaconda3\envs\agent-dev\python.exe')
 
 
-def main():
-    if Path(sys.executable).resolve() != EXPECTED_PYTHON.resolve():
-        raise SystemExit(f'请用项目指定解释器运行：{EXPECTED_PYTHON}')
+def check_environment():
     if sys.platform != 'win32':
         raise SystemExit('当前构建脚本仅生成 Windows 版本')
+    if sys.version_info < (3, 11):
+        raise SystemExit('请使用 Python 3.11 或更新版本运行构建脚本')
+    if struct.calcsize('P') * 8 != 64:
+        raise SystemExit('当前便携包仅支持 64 位 Python 构建')
     try:
         version = importlib.metadata.version('pyinstaller')
     except importlib.metadata.PackageNotFoundError:
-        raise SystemExit('缺少 PyInstaller；请先按项目规范取得安装批准，不会自动安装')
+        raise SystemExit('当前 Python 环境缺少 PyInstaller 6.x；请先自行安装，脚本不会自动安装')
     if not version.startswith('6.'):
         raise SystemExit(f'当前 PyInstaller {version} 未验证；请使用 6.x')
+
+
+def main():
+    check_environment()
 
     stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
     release_name = f'FileNest-Windows-x64-{stamp}'
@@ -34,7 +40,9 @@ def main():
     command = [sys.executable, '-m', 'PyInstaller', '--onedir', '--console',
                '--name', 'FileNest', '--distpath', str(release_dir),
                '--workpath', str(work_dir), '--specpath', str(work_dir),
+               '--icon', str(ROOT / 'resource' / 'filenest-icon.png'),
                '--add-data', f'{ROOT / "web"};web',
+               '--add-data', f'{ROOT / "resource"};resource',
                '--exclude-module', 'ui.main_window', '--exclude-module', 'tkinter',
                str(ROOT / 'main.py')]
     subprocess.run(command, cwd=ROOT, check=True)

@@ -20,6 +20,26 @@ def available_roots():
     return [Path('/')]
 
 
+def common_folders():
+    """只展示实际存在的常用目录；路径重定向时优先尝试 OneDrive 位置。"""
+    home = Path.home()
+    cloud = os.environ.get('OneDrive') if os.name == 'nt' else None
+    names = [('桌面', 'Desktop'), ('文档', 'Documents'), ('下载', 'Downloads'),
+             ('图片', 'Pictures'), ('音乐', 'Music'), ('视频', 'Videos')]
+    places = []
+    for label, folder in names:
+        candidates = ([Path(cloud) / folder] if cloud and folder != 'Downloads' else []) + [home / folder]
+        for candidate in candidates:
+            try:
+                directory = safe_path(candidate)
+                if directory.is_dir():
+                    places.append({'name': label, 'path': str(directory)})
+                    break
+            except (OSError, ValueError):
+                continue
+    return places
+
+
 class DirectoryBrowser:
     def __init__(self, internal):
         self.internal = internal

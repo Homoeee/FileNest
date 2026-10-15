@@ -11,6 +11,7 @@ let lastQuickRequest = null;
 const EXPLORER_PAGE_SIZE = 200;
 let explorerFavorites = JSON.parse(localStorage.getItem('filenest-favorites') || '[]');
 let explorerRecent = JSON.parse(localStorage.getItem('filenest-recent') || '[]');
+let quickAccess = {common:[], pinned:[]};
 
 const explorerName = entry => entry.path.split(/[\\/]/).filter(Boolean).pop() || entry.path;
 const explorerSize = value => value >= 1073741824 ? `${(value/1073741824).toFixed(1)} GB` :
@@ -28,11 +29,22 @@ function explorerVisible(side) {
   const rows = pane.entries.map((entry, index) => ({entry, index})).filter(({entry}) =>
     (!query || explorerName(entry).toLocaleLowerCase('zh-CN').includes(query)) && (type === 'all' || entry.category === type));
   const field = pane.sort;
+  const value = entry => {
+    const name = explorerName(entry);
+    if (field === 'name') return name;
+    if (field === 'extension') {
+      const dot = name.lastIndexOf('.');
+      return entry.kind === 'directory' || dot <= 0 ? '' : name.slice(dot + 1);
+    }
+    return entry[field];
+  };
+  const compare = (a,b) => typeof a === 'string'
+    ? a.localeCompare(b, 'zh-CN', {numeric:true, sensitivity:'base'}) : a - b;
   rows.sort((a,b) => {
     if (a.entry.kind !== b.entry.kind) return a.entry.kind === 'directory' ? -1 : 1;
-    const av = field === 'name' ? explorerName(a.entry).toLocaleLowerCase('zh-CN') : a.entry[field];
-    const bv = field === 'name' ? explorerName(b.entry).toLocaleLowerCase('zh-CN') : b.entry[field];
-    return (typeof av === 'string' ? av.localeCompare(bv, 'zh-CN', {numeric:true}) : av - bv) * pane.direction;
+    const primary = compare(value(a.entry), value(b.entry));
+    const byName = compare(explorerName(a.entry), explorerName(b.entry));
+    return (primary || byName || a.index - b.index) * pane.direction;
   });
   return rows;
 }
@@ -49,6 +61,10 @@ function renderExplorerPane(side) {
   $(`#path-${side}`).value = pane.path;
   $(`#count-${side}`).textContent = pane.loading ? '读取中…' : `${visible.length} 项${visible.length < pane.entries.length ? ` / 共 ${pane.entries.length} 项` : ''}`;
   $(`#error-${side}`).textContent = pane.error || '';
+  $(`#sort-${side}`).value = pane.sort;
+  const direction = $(`[data-direction="${side}"]`);
+  direction.textContent = pane.direction === 1 ? '升序 ↑' : '降序 ↓';
+  direction.setAttribute('aria-label', `${side === 'left' ? '左' : '右'}侧切换为${pane.direction === 1 ? '降序' : '升序'}`);
   const shown = visible.slice(0, pane.renderLimit || EXPLORER_PAGE_SIZE);
   $(`#rows-${side}`).innerHTML = pane.loading ? '<tr><td colspan="4" class="empty">正在读取当前目录…</td></tr>' : shown.map(({entry,index}) => {
     const name = explorerName(entry), folder = entry.kind === 'directory';
@@ -59,7 +75,9 @@ function renderExplorerPane(side) {
   all.checked = eligible.length > 0 && eligible.every(index => pane.selected.has(index));
   all.indeterminate = eligible.some(index => pane.selected.has(index)) && !all.checked;
   all.disabled = pane.loading || !eligible.length;
-  $(`#star-${side}`).textContent = pane.path && explorerFavorites.includes(pane.path) ? '★' : '☆';
+  const pinned = [...quickAccess.common, ...quickAccess.pinned].some(place => place.path === pane.path);
+  $(`#star-${side}`).textContent = pane.path && pinned ? '★' : '☆';
+  $(`#star-${side}`).title = pinned ? '取消固定当前目录' : '固定当前目录到快速访问';
   renderExplorerActions();
 }
 
@@ -74,6 +92,7 @@ function renderExplorerActions() {
     const arrow = targetSide === 'left' ? '←' : '→';
     if (button.dataset.quick === 'move') button.textContent = `${arrow} 移动到${targetSide === 'left'?'左':'右'}侧`;
     if (button.dataset.quick === 'copy') button.textContent = `${arrow} 复制到${targetSide === 'left'?'左':'右'}侧`;
+    if (button.dataset.quick === 'rename') button.textContent = count === 1 ? '快捷重命名' : '批量重命名';
   });
 }
 
@@ -125,6 +144,24 @@ function chooseExplorerEntry(side, index, event={}) {
 function selectedExplorerItems() {
   const pane = explorerPanes[activeExplorerSide];
   return [...pane.selected].sort((a,b)=>a-b).map(index => pane.entries[index]);
+}
+
+function quickRenameDialog() {
+  const items = selectedExplorerItems();
+  if (items.length !== 1) throw new Error('快捷重命名只支持一个项目');
+  const entry = items[0], oldName = explorerName(entry);
+  const dot = entry.kind === 'file' ? oldName.lastIndexOf('.') : -1;
+  const extension = dot > 0 ? oldName.slice(dot) : '';
+  const stem = extension ? oldName.slice(0, -extension.length) : oldName;
+  detail('快捷重命名', `<form id="quickRenameOne"><label for="newExplorerName">新名称</label><input id="newExplorerName" class="confirm-input" value="${explorerEscape(stem)}" required><p>原名称：${explorerEscape(oldName)}${extension ? `；扩展名 ${explorerEscape(extension)} 保持不变` : ''}</p><p id="renameOneError" role="alert"></p><div class="actions"><button class="primary" type="submit">预览重命名</button></div></form>`);
+  const input = $('#newExplorerName'); input.focus(); input.select();
+  $('#quickRenameOne').onsubmit = guard(async event => {
+    event.preventDefault();
+    const newName = input.value + extension;
+    if (newName === oldName) {$('#renameOneError').textContent = '请输入不同的名称';return;}
+    $('#detail').close();
+    await prepareQuickOperation('rename', {new_name:newName});
+  });
 }
 
 function renameOptionsDialog() {
@@ -227,21 +264,48 @@ async function updateExplorerUndo(state) {
 }
 
 function renderExplorerPlaces() {
-  const defaults=[{name:'此电脑',path:''},...explorerRecent.slice(0,4).map(path=>({name:explorerName({path}),path}))];
-  $('#explorerPlaces').innerHTML=`<h3>快捷位置</h3>${defaults.map(place=>`<div class="place-item"><button data-place="${explorerEscape(place.path)}" title="${explorerEscape(place.path||'此电脑')}">${place.path?'◷':'▱'} ${explorerEscape(place.name)}</button></div>`).join('')}<h3>收藏</h3>${explorerFavorites.length?explorerFavorites.map(path=>`<div class="place-item"><button data-place="${explorerEscape(path)}" title="${explorerEscape(path)}">★ ${explorerEscape(explorerName({path}))}</button><button class="unpin" data-unpin="${explorerEscape(path)}" aria-label="取消收藏 ${explorerEscape(path)}">×</button></div>`).join(''):'<div class="small">点击文件栏上的 ☆ 收藏</div>'}`;
+  const placeButton = (place, icon, removable=false) => `<div class="place-item"><button type="button" data-place="${explorerEscape(place.path)}" title="${explorerEscape(place.path||'此电脑')}">${icon} ${explorerEscape(place.name)}</button>${removable?`<button type="button" class="unpin" data-quick-unpin="${explorerEscape(place.path)}" aria-label="取消固定 ${explorerEscape(place.name)}">×</button>`:''}</div>`;
+  const common=[{name:'此电脑',path:''},...quickAccess.common];
+  const recent=explorerRecent.filter(path=>![...quickAccess.common,...quickAccess.pinned].some(place=>place.path===path)).slice(0,4);
+  const legacy=explorerFavorites.filter(path=>![...quickAccess.common,...quickAccess.pinned].some(place=>place.path===path));
+  $('#explorerPlaces').innerHTML=`<h3>快速访问</h3>${common.map(place=>placeButton(place,'▱')).join('')}${quickAccess.pinned.map(place=>placeButton(place,'★',true)).join('')}<button type="button" class="add-place" data-add-place>＋ 选择文件夹固定</button><h3>最近访问</h3>${recent.length?recent.map(path=>placeButton({name:explorerName({path}),path},'◷')).join(''):'<div class="small">暂无最近访问</div>'}${legacy.length?`<h3>旧收藏（此浏览器）</h3>${legacy.map(path=>`<div class="place-item"><button type="button" data-place="${explorerEscape(path)}" title="${explorerEscape(path)}">☆ ${explorerEscape(explorerName({path}))}</button><button type="button" class="unpin" data-unpin="${explorerEscape(path)}" aria-label="移除旧收藏 ${explorerEscape(path)}">×</button></div>`).join('')}`:''}`;
+}
+
+async function updateQuickAccess(action,path){
+  quickAccess=await explorerApi('quick-access',{action,path});
+  renderExplorerPlaces();
+  renderExplorerPane('left');renderExplorerPane('right');
+  toast(action==='add'?'已固定到快速访问':'已从快速访问移除');
 }
 
 function showExplorerContext(event,side,index) {
   event.preventDefault();
   if (paneHas(side,index)) setActiveExplorer(side);
   else chooseExplorerEntry(side,index);
-  const menu=$('#fileContextMenu');menu.hidden=false;menu.style.left=`${Math.min(event.clientX,innerWidth-190)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-245)}px`;
-  menu.innerHTML='<button data-menu="open">打开</button><button data-menu="move">移动到另一侧</button><button data-menu="copy">复制到另一侧</button><button data-menu="rename">重命名</button><button data-menu="recycle">移入回收站</button><button data-menu="delete" class="danger-text">永久删除…</button>';
-  menu.onclick=event=>{const action=event.target.dataset.menu;menu.hidden=true;if(action==='open')openSelectedFolder();else startExplorerAction(action);};
+  const entry = explorerPanes[side].entries[index];
+  const menu=$('#fileContextMenu');
+  const pinned=quickAccess.pinned.some(place=>place.path===entry.path),common=quickAccess.common.some(place=>place.path===entry.path);
+  menu.innerHTML=`<button data-menu="open">${entry.kind === 'directory' ? '打开文件夹' : '打开'}</button>${entry.kind === 'file' ? '<button data-menu="openas">选择其他应用打开…</button>' : `<button data-menu="${pinned?'unpin':'pin'}" ${common?'disabled':''}>${common?'默认快速访问位置':pinned?'从快速访问移除':'固定到快速访问'}</button>`}<button data-menu="move">移动到另一侧</button><button data-menu="copy">复制到另一侧</button><button data-menu="rename">${explorerPanes[side].selected.size === 1 ? '快捷重命名' : '批量重命名'}</button><button data-menu="recycle">移入回收站</button><button data-menu="delete" class="danger-text">永久删除…</button>`;
+  menu.hidden=false;
+  menu.style.left=`${Math.max(8,Math.min(event.clientX,innerWidth-menu.offsetWidth-8))}px`;
+  menu.style.top=`${Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))}px`;
+  menu.onclick=guard(async event=>{const action=event.target.dataset.menu;if(!action)return;menu.hidden=true;if(action==='open'||action==='openas')await openExplorerEntry(side,index,action==='openas'?'choose':'default');else if(action==='pin'||action==='unpin')await updateQuickAccess(action==='pin'?'add':'remove',entry.path);else startExplorerAction(action);});
 }
 function paneHas(side,index){return explorerPanes[side].selected.has(index);}
-function openSelectedFolder(){const pane=explorerPanes[activeExplorerSide],items=selectedExplorerItems();if(items.length===1&&items[0].kind==='directory')browseExplorer(activeExplorerSide,items[0].path);}
-function startExplorerAction(action){$('#quickMore').open=false;if(action==='rename')return renameOptionsDialog();if(action==='rules')return rulesQuickDialog();return guard(()=>prepareQuickOperation(action))();}
+async function openExplorerEntry(side,index,mode='default'){
+  const pane=explorerPanes[side],entry=pane.entries[index];
+  if(!entry)throw new Error('文件列表已变化，请刷新后重试');
+  setActiveExplorer(side);
+  if(entry.kind==='directory'){
+    if(mode==='choose')throw new Error('请选择文件');
+    await browseExplorer(side,entry.path);
+    return;
+  }
+  await explorerApi('open',{token:pane.token,index,mode});
+  $('#explorerStatus').textContent=mode==='choose'?'已打开系统应用选择窗口。':'已交给系统默认应用打开。';
+}
+function openSelectedEntry(){const pane=explorerPanes[activeExplorerSide];if(pane.selected.size===1)return openExplorerEntry(activeExplorerSide,[...pane.selected][0]);}
+function startExplorerAction(action){$('#quickMore').open=false;if(action==='rename')return guard(()=>explorerPanes[activeExplorerSide].selected.size===1?quickRenameDialog():renameOptionsDialog())();if(action==='rules')return rulesQuickDialog();return guard(()=>prepareQuickOperation(action))();}
 
 $$('.file-pane').forEach(paneNode=>paneNode.onmousedown=()=>setActiveExplorer(paneNode.dataset.pane));
 for (const side of ['left','right']) {
@@ -249,16 +313,22 @@ for (const side of ['left','right']) {
   $(`#search-${side}`).oninput=()=>{explorerPanes[side].renderLimit=EXPLORER_PAGE_SIZE;renderExplorerPane(side);};$(`#type-${side}`).onchange=()=>{explorerPanes[side].renderLimit=EXPLORER_PAGE_SIZE;renderExplorerPane(side);};
   $(`#all-${side}`).onchange=event=>{const pane=explorerPanes[side];explorerVisible(side).forEach(({index})=>event.target.checked?pane.selected.add(index):pane.selected.delete(index));setActiveExplorer(side);renderExplorerPane(side);};
   $(`#rows-${side}`).onclick=event=>{if(event.target.closest('[data-more]')){explorerPanes[side].renderLimit=(explorerPanes[side].renderLimit||EXPLORER_PAGE_SIZE)+EXPLORER_PAGE_SIZE;renderExplorerPane(side);return;}const check=event.target.closest('[data-entry-check]'),row=event.target.closest('[data-entry]');if(!row)return;const index=Number(row.dataset.entry);chooseExplorerEntry(side,index,{ctrlKey:event.ctrlKey||!!check,shiftKey:event.shiftKey});};
-  $(`#rows-${side}`).ondblclick=event=>{const row=event.target.closest('[data-entry]');if(!row)return;const entry=explorerPanes[side].entries[Number(row.dataset.entry)];if(entry.kind==='directory')browseExplorer(side,entry.path);};
+  $(`#rows-${side}`).ondblclick=guard(async event=>{if(event.target.closest('[data-entry-check]'))return;const row=event.target.closest('[data-entry]');if(row)await openExplorerEntry(side,Number(row.dataset.entry));});
   $(`#rows-${side}`).oncontextmenu=event=>{const row=event.target.closest('[data-entry]');if(row)showExplorerContext(event,side,Number(row.dataset.entry));};
-  $(`#star-${side}`).onclick=()=>{const path=explorerPanes[side].path;if(!path)return;explorerFavorites=explorerFavorites.includes(path)?explorerFavorites.filter(item=>item!==path):[...explorerFavorites,path];localStorage.setItem('filenest-favorites',JSON.stringify(explorerFavorites));renderExplorerPlaces();renderExplorerPane(side);};
+  $(`#star-${side}`).onclick=guard(async()=>{const path=explorerPanes[side].path;if(!path)return;if(quickAccess.common.some(place=>place.path===path)){toast('这是默认快速访问位置');return;}await updateQuickAccess(quickAccess.pinned.some(place=>place.path===path)?'remove':'add',path);});
 }
 $$('[data-nav]').forEach(button=>button.onclick=()=>{const side=button.dataset.side,pane=explorerPanes[side];if(button.dataset.nav==='up')browseExplorer(side,pane.parent);else if(button.dataset.nav==='refresh')browseExplorer(side,pane.path,{history:true});else if(button.dataset.nav==='back'&&pane.historyIndex>0){pane.historyIndex--;browseExplorer(side,pane.history[pane.historyIndex],{history:true});}});
 $$('[data-pick-pane]').forEach(button=>button.onclick=guard(()=>openPicker(`path-${button.dataset.pickPane}`)));
 $$('[data-sort]').forEach(button=>button.onclick=()=>{const pane=explorerPanes[button.dataset.side];if(pane.sort===button.dataset.sort)pane.direction*=-1;else{pane.sort=button.dataset.sort;pane.direction=1;}renderExplorerPane(button.dataset.side);});
+for(const side of ['left','right']){
+  $(`#sort-${side}`).onchange=event=>{explorerPanes[side].sort=event.target.value;renderExplorerPane(side);};
+  $(`[data-direction="${side}"]`).onclick=()=>{explorerPanes[side].direction*=-1;renderExplorerPane(side);};
+}
 $$('[data-quick]').forEach(button=>button.onclick=()=>startExplorerAction(button.dataset.quick));
 $('#explorerCancel').onclick=()=>explorerApi('cancel',{});$('#explorerUndo').onclick=()=>confirmExplorerUndo($('#explorerUndo').dataset.batch);
-$('#explorerPlaces').onclick=event=>{const place=event.target.closest('[data-place]'),unpin=event.target.closest('[data-unpin]');if(place)browseExplorer(activeExplorerSide,place.dataset.place);if(unpin){explorerFavorites=explorerFavorites.filter(item=>item!==unpin.dataset.unpin);localStorage.setItem('filenest-favorites',JSON.stringify(explorerFavorites));renderExplorerPlaces();}};
+$('#explorerPlaces').onclick=guard(async event=>{const place=event.target.closest('[data-place]'),unpin=event.target.closest('[data-unpin]'),quickUnpin=event.target.closest('[data-quick-unpin]');if(place)await browseExplorer(activeExplorerSide,place.dataset.place);if(quickUnpin)await updateQuickAccess('remove',quickUnpin.dataset.quickUnpin);if(unpin){explorerFavorites=explorerFavorites.filter(item=>item!==unpin.dataset.unpin);localStorage.setItem('filenest-favorites',JSON.stringify(explorerFavorites));renderExplorerPlaces();}if(event.target.closest('[data-add-place]'))await openPicker('quick-access');});
+$('#explorerPlaces').oncontextmenu=event=>{const place=event.target.closest('[data-place]');if(!place||!place.dataset.place)return;event.preventDefault();const path=place.dataset.place,alreadyPinned=quickAccess.pinned.some(item=>item.path===path),common=quickAccess.common.some(item=>item.path===path);const menu=$('#fileContextMenu');menu.innerHTML=`<button type="button" data-place-action="${alreadyPinned?'remove':'add'}" ${common?'disabled':''}>${common?'默认快速访问位置':alreadyPinned?'从快速访问移除':'固定到快速访问'}</button>`;menu.hidden=false;menu.style.left=`${Math.max(8,Math.min(event.clientX,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(event.clientY,innerHeight-menu.offsetHeight-8))}px`;menu.onclick=guard(async e=>{const action=e.target.dataset.placeAction;if(action){menu.hidden=true;await updateQuickAccess(action,path);}});};
+window.addEventListener('focus',guard(async()=>{await window.filenestInitialState;quickAccess=await explorerApi('quick-access',{action:'list'});renderExplorerPlaces();renderExplorerPane('left');renderExplorerPane('right');}));
 document.addEventListener('click',event=>{if(!event.target.closest('#fileContextMenu'))$('#fileContextMenu').hidden=true;});
 document.addEventListener('keydown',event=>{
   if($('#explorer').hidden||['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)||$('#detail').open)return;
@@ -266,10 +336,10 @@ document.addEventListener('keydown',event=>{
   if(event.ctrlKey&&event.key.toLowerCase()==='a'){event.preventDefault();explorerVisible(activeExplorerSide).forEach(({index})=>pane.selected.add(index));renderExplorerPane(activeExplorerSide);}
   if(event.ctrlKey&&['c','x'].includes(event.key.toLowerCase())&&pane.selected.size){event.preventDefault();explorerClipboard={action:event.key.toLowerCase()==='c'?'copy':'move',token:pane.token,indices:[...pane.selected],source:activeExplorerSide};$('#explorerStatus').textContent=`已${explorerClipboard.action==='copy'?'复制':'剪切'} ${pane.selected.size} 项；切换到目标栏按 Ctrl+V。`;}
   if(event.ctrlKey&&event.key.toLowerCase()==='v'&&explorerClipboard){event.preventDefault();const target=explorerPanes[activeExplorerSide];const oldSide=activeExplorerSide,sourceSide=explorerClipboard.source;activeExplorerSide=sourceSide;const source=explorerPanes[sourceSide],oldToken=source.token,oldSelected=source.selected;source.token=explorerClipboard.token;source.selected=new Set(explorerClipboard.indices);prepareQuickOperation(explorerClipboard.action,{target:target.path}).finally(()=>{source.token=oldToken;source.selected=oldSelected;activeExplorerSide=oldSide;});}
-  if(event.key==='F2'&&pane.selected.size){event.preventDefault();renameOptionsDialog();}
+  if(event.key==='F2'&&pane.selected.size){event.preventDefault();startExplorerAction('rename');}
   if(event.key==='Delete'&&pane.selected.size){event.preventDefault();startExplorerAction('recycle');}
-  if(event.key==='Enter')openSelectedFolder();
+  if(event.key==='Enter')guard(()=>openSelectedEntry())();
 });
 
 renderExplorerPlaces();
-guard(async()=>{const state=await window.filenestInitialState;const left=state.settings.sources?.[0]||'',right=state.settings.target||'';await Promise.all([browseExplorer('left',left),browseExplorer('right',right)]);await updateExplorerUndo(state);})();
+guard(async()=>{const state=await window.filenestInitialState;quickAccess=state.quick_access||{common:[],pinned:[]};renderExplorerPlaces();const left=state.settings.sources?.[0]||'',right=state.settings.target||'';await Promise.all([browseExplorer('left',left),browseExplorer('right',right)]);await updateExplorerUndo(state);})();

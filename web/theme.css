@@ -5,7 +5,7 @@ body{padding:20px;background:radial-gradient(ellipse at 0 0,#ffc49d 0,transparen
 .app{max-width:1660px;min-height:calc(100vh - 40px);margin:0 auto;border:1px solid #ffffffaf;border-radius:20px;box-shadow:0 18px 60px #31577926;overflow:visible;background:#f7fbff}
 .sidebar{position:sticky;top:0;inset:auto;flex:0 0 214px;width:214px;height:calc(100vh - 40px);padding:27px 16px;background:linear-gradient(155deg,#f7fbfff2 0%,#e8f3f9f0 55%,#fff0e2ee 100%);border-right:1px solid #ffffffb8;border-radius:20px 0 0 20px;overflow-y:auto}
 .brand{font-size:23px;letter-spacing:-.7px;padding-inline:8px}
-.logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#ff9c49 0%,#42a9e6 70%,#2673d6 100%);box-shadow:0 4px 12px #4789bc36;font-size:22px}
+.brand .logo{display:block;flex:none;width:36px;height:36px;object-fit:contain;background:none;border-radius:0;box-shadow:none}
 .brand-sub{padding:5px 9px 30px;color:var(--muted)}
 .nav{gap:4px}
 .nav button{gap:10px;padding:11px 12px;border-radius:9px;color:#50637d;font-size:14px}
